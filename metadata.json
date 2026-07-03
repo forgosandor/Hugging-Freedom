@@ -1,0 +1,6 @@
+{
+  "name": "Univerzális Ingyenes AI Chat",
+  "description": "Egy ingyenes és stabil AI csevegőalkalmazás, amely a Google Gemini Flash és a legnépszerűbb nyílt forráskódú Hugging Face modelleket kombinálja.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
