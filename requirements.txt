@@ -1,7 +1,0 @@
-streamlit
-huggingface_hub
-google-genai
-requests
-Pillow
-edge-tts
-asyncio

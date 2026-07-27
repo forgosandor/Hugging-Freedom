@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
-import { Sparkles, User, Copy, Check, Info, Bot, ArrowRight } from "lucide-react";
+import { Sparkles, User, Copy, Check, Info, Bot, ArrowRight, Download, RefreshCw } from "lucide-react";
 import { Message } from "../types";
 
 interface ChatAreaProps {
@@ -7,6 +7,9 @@ interface ChatAreaProps {
   isGenerating: boolean;
   activeModelName: string;
   onSuggestionClick: (prompt: string) => void;
+  suggestedFollowUps?: string[];
+  isGeneratingSuggestions?: boolean;
+  onRefreshStarters?: () => void;
 }
 
 const SUGGESTIONS = [
@@ -31,10 +34,62 @@ export default function ChatArea({
   messages,
   isGenerating,
   activeModelName,
-  onSuggestionClick
+  onSuggestionClick,
+  suggestedFollowUps = [],
+  isGeneratingSuggestions = false,
+  onRefreshStarters
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [copiedFull, setCopiedFull] = useState(false);
+
+  // Map suggested followups to dynamic starter prompts if no messages are present
+  const displaySuggestions = React.useMemo(() => {
+    if (messages.length === 0 && suggestedFollowUps && suggestedFollowUps.length >= 3) {
+      const icons = ["💡", "🚀", "🎨"];
+      const titles = ["Kreatív Ötlet", "Felfedezés", "Gondolatébresztő"];
+      return suggestedFollowUps.slice(0, 3).map((prompt, idx) => ({
+        title: titles[idx] || "Téma Javaslat",
+        prompt: prompt,
+        description: prompt,
+        icon: icons[idx] || "✨"
+      }));
+    }
+    return SUGGESTIONS;
+  }, [messages, suggestedFollowUps]);
+
+  // Estimate token usage (approx. 3.8 characters per token for mixed languages)
+  const estimatedTokens = React.useMemo(() => {
+    const totalChars = messages.reduce((acc, m) => acc + (m.content || "").length, 0);
+    return Math.ceil(totalChars / 3.8);
+  }, [messages]);
+
+  const getFullMarkdown = () => {
+    return messages.map(m => {
+      const roleName = m.role === "user" ? "Te" : `AI (${activeModelName})`;
+      return `### ${roleName} [${m.timestamp}]\n\n${m.content}\n`;
+    }).join("\n---\n\n");
+  };
+
+  const handleCopyFullChat = () => {
+    const md = getFullMarkdown();
+    navigator.clipboard.writeText(md).then(() => {
+      setCopiedFull(true);
+      setTimeout(() => setCopiedFull(false), 2000);
+    });
+  };
+
+  const handleDownloadFullChat = () => {
+    const md = getFullMarkdown();
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `chat-beszelgetes-${new Date().toISOString().slice(0, 10)}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Auto-scroll to bottom of chat when new messages or chunks arrive
   useEffect(() => {
@@ -161,32 +216,96 @@ export default function ChatArea({
           </p>
 
           {/* Prompt Suggestions */}
-          <div className="mt-8 grid gap-3 w-full max-w-2xl sm:grid-cols-3">
-            {SUGGESTIONS.map((s, idx) => (
+          <div className="mt-8 w-full max-w-2xl space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] text-[#666666] font-semibold uppercase tracking-wider">
+                Indító javaslatok:
+              </span>
               <button
-                key={idx}
-                onClick={() => onSuggestionClick(s.prompt)}
-                className="flex flex-col justify-between items-start rounded-xl border border-[#262626] bg-[#141414] p-4 text-left shadow-2xs hover:border-blue-500/30 hover:bg-[#1A1A1A] hover:shadow-xs transition-all duration-200 group cursor-pointer"
+                type="button"
+                onClick={onRefreshStarters}
+                disabled={isGeneratingSuggestions}
+                className="flex items-center gap-1.5 text-[10px] text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-40 cursor-pointer"
               >
-                <div>
-                  <span className="text-xl mb-2 block">{s.icon}</span>
-                  <span className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">
-                    {s.title}
-                  </span>
-                  <p className="mt-1 text-[11px] leading-relaxed text-[#666666] line-clamp-3">
-                    "{s.prompt}"
-                  </p>
-                </div>
-                <div className="mt-3 flex items-center gap-1 self-end text-[10px] font-bold text-blue-400 opacity-0 group-hover:opacity-100 transition-all">
-                  <span>Próba</span>
-                  <ArrowRight className="h-3 w-3" />
-                </div>
+                <RefreshCw className={`h-3 w-3 ${isGeneratingSuggestions ? 'animate-spin' : ''}`} />
+                <span>{isGeneratingSuggestions ? "Generálás..." : "Új témák generálása"}</span>
               </button>
-            ))}
+            </div>
+
+            <div className="grid gap-3 w-full sm:grid-cols-3">
+              {displaySuggestions.map((s, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onSuggestionClick(s.prompt)}
+                  className="flex flex-col justify-between items-start rounded-xl border border-[#262626] bg-[#141414] p-4 text-left shadow-2xs hover:border-blue-500/30 hover:bg-[#1A1A1A] hover:shadow-xs transition-all duration-200 group cursor-pointer h-full"
+                >
+                  <div className="flex flex-col h-full justify-between w-full">
+                    <div>
+                      <span className="text-xl mb-2 block">{s.icon}</span>
+                      <span className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors line-clamp-2">
+                        {s.title}
+                      </span>
+                      <p className="mt-1 text-[11px] leading-relaxed text-[#666666] line-clamp-3">
+                        {s.description}
+                      </p>
+                    </div>
+                    <div className="mt-3 flex items-center gap-1 self-end text-[10px] font-bold text-blue-400 opacity-0 group-hover:opacity-100 transition-all">
+                      <span>Próba</span>
+                      <ArrowRight className="h-3 w-3" />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-5">
+          {/* Active Chat Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1A1A1A] pb-3 mb-1 mx-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs font-semibold text-[#888888]">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-blue-500" />
+                <span>Aktív Beszélgetés ({messages.length} üzenet)</span>
+              </div>
+              {messages.length > 0 && (
+                <div 
+                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-400 font-medium transition-all hover:bg-blue-500/15"
+                  title="Becsült tokenhasználat a beszélgetés teljes hossza alapján (karakterhossz / 3.8)"
+                >
+                  <Sparkles className="h-3 w-3 text-blue-400 animate-pulse" />
+                  <span>Becsült token: {estimatedTokens.toLocaleString("hu-HU")}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCopyFullChat}
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-[#141414] border border-[#222222] hover:border-blue-500/30 transition-all cursor-pointer active:scale-95"
+                title="Beszélgetés másolása"
+              >
+                {copiedFull ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="text-emerald-400 font-medium">Másolva!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5 text-gray-500" />
+                    <span>Másolás</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleDownloadFullChat}
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-[#141414] border border-[#222222] hover:border-blue-500/30 transition-all cursor-pointer active:scale-95"
+                title="Beszélgetés letöltése Markdown-ként"
+              >
+                <Download className="h-3.5 w-3.5 text-blue-500" />
+                <span>Mentés (.md)</span>
+              </button>
+            </div>
+          </div>
           {messages.map((m, idx) => {
             const isUser = m.role === "user";
             return (
@@ -254,23 +373,60 @@ export default function ChatArea({
           })}
 
           {/* Active generation loading state */}
-          {isGenerating && (
-            <div className="flex gap-3.5 self-start max-w-4/5 animate-pulse">
-              <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
-                <Sparkles className="h-4.5 w-4.5 animate-spin" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold text-[#555555] px-1">
-                  {activeModelName} ír...
-                </span>
-                <div className="rounded-2xl rounded-tl-xs bg-[#141414] border border-[#262626] px-4 py-3 shadow-2xs">
-                  <div className="flex items-center gap-1.5 py-1">
-                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
-                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
-                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" />
+          {isGenerating && (() => {
+            const lastMsg = messages[messages.length - 1];
+            const isThinking = !lastMsg || lastMsg.role !== "assistant" || !lastMsg.content;
+            return (
+              <div className="flex gap-3.5 self-start max-w-4/5">
+                <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
+                  <Sparkles className="h-4.5 w-4.5 animate-spin" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold text-[#555555] px-1">
+                    {activeModelName} ír...
+                  </span>
+                  <div className="rounded-2xl rounded-tl-xs bg-[#141414] border border-[#262626] px-4 py-3 shadow-2xs flex items-center gap-2.5">
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
+                      <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
+                      <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" />
+                    </div>
+                    <span className="text-xs font-mono font-medium text-gray-400">
+                      {isThinking ? "AI is thinking..." : "AI is streaming..."}
+                    </span>
                   </div>
                 </div>
               </div>
+            );
+          })()}
+
+          {/* Smart Suggested Follow-ups */}
+          {!isGenerating && suggestedFollowUps && suggestedFollowUps.length > 0 && (
+            <div className="mt-4 flex flex-col gap-2.5 self-start w-full max-w-2xl animate-fade-in">
+              <div className="flex items-center gap-1.5 text-[10px] text-blue-400 font-semibold uppercase tracking-wider pl-1">
+                <Sparkles className="h-3.5 w-3.5 animate-pulse text-blue-500" />
+                <span>Folytatási javaslatok (Kattints a küldéshez):</span>
+              </div>
+              <div className="grid gap-2.5 sm:grid-cols-1 md:grid-cols-3 w-full">
+                {suggestedFollowUps.map((pText, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => onSuggestionClick(pText)}
+                    className="flex items-center justify-between gap-2.5 text-left rounded-xl border border-[#222222] bg-[#0E0E0E]/90 hover:bg-[#161616] hover:border-blue-500/30 p-3.5 text-xs text-[#DDDDDD] hover:text-white transition-all duration-200 shadow-xs cursor-pointer group hover:shadow-[0_0_12px_rgba(59,130,246,0.05)] active:scale-[0.98]"
+                  >
+                    <span className="line-clamp-2 pr-1 font-medium">{pText}</span>
+                    <ArrowRight className="h-3.5 w-3.5 shrink-0 text-blue-500 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isGeneratingSuggestions && (
+            <div className="mt-4 flex items-center gap-2 text-[10px] text-[#666666] pl-1 font-medium">
+              <Sparkles className="h-3 w-3 animate-spin text-blue-500/60" />
+              <span>Következő beszélgetési javaslatok előkészítése...</span>
             </div>
           )}
 
